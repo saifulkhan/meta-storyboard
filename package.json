@@ -1,6 +1,6 @@
 {
   "name": "meta-storyboard",
-  "version": "0.2.7",
+  "version": "0.2.8",
   "description": "A Component Library for Meta-Storyboarding (MSB) Using Feature-Action Design Pattern.",
   "author": "",
   "private": false,
