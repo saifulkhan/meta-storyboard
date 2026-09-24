@@ -1,57 +1,46 @@
+import { Playable } from '../../types';
+
 /**
  * SyncPlotsController provides functionality to control play/pause state
- * for multiple animation objects without depending on any specific framework.
+ * for multiple playable objects (e.g., synchronized plots) without depending
+ * on any specific framework.
  */
 export class SyncPlotsController {
   private isPlaying: boolean = false;
-  private plots: any[];
+  private plots: Playable[];
 
-  constructor(plots: any[]) {
+  constructor(plots: Playable[]) {
     this.plots = plots;
 
-    // Set the onPauseCallback on each plot if supported
+    // pause all plots when any plot pauses itself, e.g., at a pause action
     this.plots.forEach((plot) => {
-      if (plot && typeof plot.setOnPauseCallback === 'function') {
-        plot.setOnPauseCallback(() => this.pause());
-      }
+      plot.setOnPauseCallback?.(() => this.pause());
     });
   }
 
   togglePlayPause(): void {
-    this.isPlaying = !this.isPlaying;
-
-    this.plots.forEach((plot) => {
-      if (plot && typeof plot.togglePlayPause === 'function') {
-        plot.togglePlayPause();
-      }
-    });
+    if (this.isPlaying) {
+      this.pause();
+    } else {
+      this.play();
+    }
   }
 
   pause(): void {
     this.isPlaying = false;
-
-    this.plots.forEach((plot) => {
-      if (plot && typeof plot.pause === 'function') {
-        plot.pause();
-      }
-    });
+    this.plots.forEach((plot) => plot.pause());
   }
 
   play(): void {
     this.isPlaying = true;
-
-    this.plots.forEach((plot) => {
-      if (plot && typeof plot.play === 'function') {
-        plot.play();
-      }
-    });
+    this.plots.forEach((plot) => plot.play());
   }
 
   getIsPlaying(): boolean {
     return this.isPlaying;
   }
 
-  updatePlots(plots: any[]): void {
+  updatePlots(plots: Playable[]): void {
     this.plots = plots;
   }
 

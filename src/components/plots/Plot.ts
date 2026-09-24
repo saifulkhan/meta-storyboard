@@ -1,25 +1,33 @@
 import * as d3 from 'd3';
-import { Coordinate } from '../../types';
+import { Coordinate, Playable, TimelineAction } from '../../types';
 
-export abstract class Plot {
+/**
+ * Base class for animated plots.
+ *
+ * @typeParam TData - The shape of the data accepted by `setData`
+ * @typeParam TProps - The plot's property object; `setPlotProps` accepts a partial
+ */
+export abstract class Plot<TData = unknown, TProps = unknown>
+  implements Playable
+{
   protected svg: SVGSVGElement | undefined;
-  protected node: any;
 
   protected animationRef: number | null = null;
-  protected isPlayingRef: { current: boolean } = { current: false };
-  protected lastTimelineAction: any = null;
+  protected playing: boolean = false;
+  protected lastTimelineAction: TimelineAction | undefined = undefined;
   protected currentTimelineActionIdx: number = 0;
   protected onPauseCallback: (() => void) | null = null;
 
-  constructor() {}
-
-  public abstract setData(...args: unknown[]): this;
-  public abstract setPlotProps(props: any): this;
-  public abstract setName(properties: unknown): this;
+  public abstract setData(data: TData): this;
+  public abstract setPlotProps(props: Partial<TProps>): this;
+  public abstract setName(name: string): this;
   public abstract setCanvas(svg: SVGSVGElement): this;
-  public abstract plot(): void;
-  public abstract setActions(unknown: unknown): this;
-  public abstract getCoordinates(...args: unknown[]): [Coordinate, Coordinate];
+  public abstract plot(): this | void;
+  public abstract setActions(actions: TimelineAction[]): this;
+  public abstract getCoordinates(
+    date: Date,
+    index?: number,
+  ): [Coordinate, Coordinate];
 
   protected clean() {
     if (this.svg) {
@@ -28,7 +36,11 @@ export abstract class Plot {
   }
 
   togglePlayPause() {
-    this.isPlayingRef.current = !this.isPlayingRef.current;
+    if (this.playing) {
+      this.pause();
+    } else {
+      this.play();
+    }
   }
 
   animate(): void {
@@ -36,21 +48,25 @@ export abstract class Plot {
   }
 
   play() {
-    this.isPlayingRef.current = true;
+    this.playing = true;
     this.animate();
   }
 
   pause() {
-    this.isPlayingRef.current = false;
+    this.playing = false;
 
     if (this.animationRef) {
       cancelAnimationFrame(this.animationRef);
     }
   }
 
+  public isPlaying(): boolean {
+    return this.playing;
+  }
+
   /**
-   * Sets a callback function to be called when the animation is paused automatically
-   * due to a pause action in the timeline.
+   * Sets a callback function to be called when the animation is paused
+   * automatically due to a pause action in the timeline.
    * @param callback The function to call when auto-paused
    */
   setOnPauseCallback(callback: () => void) {

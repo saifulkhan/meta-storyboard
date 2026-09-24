@@ -19,7 +19,7 @@ export class Dot extends Action {
     this.type = ActionName.DOT;
   }
 
-  public setProps(props: DotProps) {
+  public setProps(props: Partial<DotProps>) {
     this.props = { ...this.props, ...props };
     return this;
   }
@@ -39,7 +39,7 @@ export class Dot extends Action {
       .attr('opacity', this.props.opacity)
       .node();
 
-    this.node.appendChild(this.dotNode);
+    this.node!.appendChild(this.dotNode);
 
     return this;
   }
@@ -55,7 +55,7 @@ export class Dot extends Action {
     return this;
   }
 
-  public updateProps(properties: DotProps): this {
+  public updateProps(properties: Partial<DotProps>): this {
     this.props = { ...this.props, ...properties };
     return this;
   }

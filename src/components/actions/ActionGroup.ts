@@ -1,6 +1,6 @@
 import { Action } from './Action';
 import { ActionZOrder } from '../../types/ActionName';
-import { Coordinate, ActionProps } from '../../types';
+import { Coordinate, AnyActionProps } from '../../types';
 
 export class ActionGroup extends Action {
   private actions: Action[] = [];
@@ -14,25 +14,26 @@ export class ActionGroup extends Action {
     return this;
   }
 
-  public setProps(props: ActionProps): this {
+  public setProps(props: AnyActionProps): this {
     this.props = { ...this.props, ...props };
 
     this.actions.map((d: Action) => d.setProps(props));
     return this;
   }
 
-  public updateProps(props: ActionProps) {
+  public updateProps(props: AnyActionProps) {
     this.props = { ...this.props, ...props };
     this.actions.map((d: Action) => d.updateProps(props));
     return this;
   }
 
   public setCanvas(svg: SVGGElement) {
+    // unknown (custom) actions sort last
     this.actions.sort(
       (a: Action, b: Action) =>
-        ActionZOrder[b.getType()] - ActionZOrder[a.getType()],
+        (ActionZOrder[b.getType()] ?? Number.MAX_SAFE_INTEGER) -
+        (ActionZOrder[a.getType()] ?? Number.MAX_SAFE_INTEGER),
     );
-    // console.log("ActionGroup:setCanvas: ordered actions: ", this.actions);
     this.actions.map((d: Action) => d.setCanvas(svg));
     return this;
   }
@@ -70,7 +71,12 @@ export class ActionGroup extends Action {
   }
 
   public draw(): void {
-    // For a group, draw all child actions
+    // for a group, draw all child actions
     this.actions.forEach((action: Action) => action.draw());
+  }
+
+  public remove(): this {
+    this.actions.forEach((action: Action) => action.remove());
+    return this;
   }
 }

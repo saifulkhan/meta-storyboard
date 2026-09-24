@@ -2,6 +2,7 @@ import * as d3 from 'd3';
 import { ActionName } from '../../types/ActionName';
 import { Action, defaultActionProps } from './Action';
 import { Coordinate, TextBoxProps } from '../../types';
+import { logger } from '../../logger';
 
 export const defaultTextBoxProps: TextBoxProps = {
   ...defaultActionProps,
@@ -32,7 +33,7 @@ export class TextBox extends Action {
     this.type = ActionName.TEXT_BOX;
   }
 
-  public setProps(props: TextBoxProps) {
+  public setProps(props: Partial<TextBoxProps>) {
     this.props = { ...defaultTextBoxProps, ...props };
     // update template variables
     this.props.templateVariables = {
@@ -56,7 +57,7 @@ export class TextBox extends Action {
     return this;
   }
 
-  public updateProps(props: TextBoxProps) {
+  public updateProps(props: Partial<TextBoxProps>) {
     this.props = { ...this.props, ...props };
     // update template variables
     this.props.templateVariables = {
@@ -65,7 +66,7 @@ export class TextBox extends Action {
     };
 
     // prettier-ignore
-    console.debug('TextBox:updateProps: props: ', props, '\nthis.props:', this.props);
+    logger.debug('TextBox:updateProps: props: ', props, '\nthis.props:', this.props);
     if (this.props.templateVariables) {
       this.props.message = this.updateStringTemplate(
         this.props.message,
@@ -77,10 +78,7 @@ export class TextBox extends Action {
       );
     }
     // prettier-ignore
-    console.debug("TextBox:updateProps: ", this.props.message, this.props.title);
-
-    this.props.horizontalAlign = props.horizontalAlign;
-    this.props.verticalAlign = props.verticalAlign;
+    logger.debug('TextBox:updateProps: ', this.props.message, this.props.title);
     return this;
   }
 
@@ -99,7 +97,7 @@ export class TextBox extends Action {
       .attr('width', this.props.width!)
       .attr('rx', 3)
       .node();
-    this.node.appendChild(this.rectNode);
+    this.node!.appendChild(this.rectNode);
 
     this.titleNode = d3
       .create('svg')
@@ -134,8 +132,8 @@ export class TextBox extends Action {
 
     this.textNode.append(this.titleNode);
     this.textNode.append(this.messageNode);
-    this.node.appendChild(this.textNode);
-    this.node.appendChild(this.connectorNode);
+    this.node!.appendChild(this.textNode);
+    this.node!.appendChild(this.connectorNode);
 
     // wrap title and message
     this.wrap(this.titleNode, this.props.title!);
@@ -286,7 +284,7 @@ export class TextBox extends Action {
     duration = 1500,
   ): Promise<any> {
     this.coordDestination = coordinate;
-    console.log(
+    logger.debug(
       'TextBox:move: coordinate1:',
       coordinate,
       this.coordDestination,

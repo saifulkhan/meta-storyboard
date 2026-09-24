@@ -16,7 +16,7 @@ import {
 import { Colors, LineColor } from '../Colors';
 import { Action } from '../actions';
 import { Plot } from './Plot';
-import { TimeSeriesPoint } from 'meta-storyboard';
+import { logger } from '../../logger';
 
 export type PCPProps = {
   title?: string;
@@ -100,7 +100,7 @@ const yScale = (
   return d3.scalePoint(keys, [margin.top, height - margin.bottom]);
 };
 
-export class ParallelCoordinatePlot extends Plot {
+export class ParallelCoordinatePlot extends Plot<TimeSeriesData, PCPProps> {
   data: any[] = [];
   props: PCPProps = defaultPCPProps;
   svg!: SVGSVGElement;
@@ -123,13 +123,8 @@ export class ParallelCoordinatePlot extends Plot {
     super();
   }
 
-  public setPlotProps(props: PCPProps) {
+  public setPlotProps(props: Partial<PCPProps>) {
     this.props = { ...defaultPCPProps, ...props };
-    return this;
-  }
-
-  public plotProperties(properties: unknown) {
-    throw new Error('Method not implemented.');
     return this;
   }
 
@@ -141,8 +136,8 @@ export class ParallelCoordinatePlot extends Plot {
       .sort((a, b) => d3.ascending(a['date'], b['date']));
 
     this.axisNames = getObjectKeysArray(data);
-    console.log('PCP:data = ', this.data);
-    console.log('PCP:data: _AxisNames = ', this.axisNames);
+    logger.debug('PCP:setData: data = ', this.data);
+    logger.debug('PCP:setData: axisNames = ', this.axisNames);
 
     return this;
   }
@@ -151,7 +146,7 @@ export class ParallelCoordinatePlot extends Plot {
     this.name = name;
     this.selectedAxis = name;
     // prettier-ignore
-    console.log("PCP:name: _selectedAxis = ", this.selectedAxis);
+    logger.debug('PCP:setName: selectedAxis = ', this.selectedAxis);
 
     return this;
   }
@@ -195,7 +190,7 @@ export class ParallelCoordinatePlot extends Plot {
     );
 
     // prettier-ignore
-    console.log("PCP: drawAxisAndLabels: xScaleMap = ", this.xScaleMap);
+    logger.debug('PCP:drawAxis: xScaleMap = ', this.xScaleMap);
 
     //
     // Draw axis and labels
@@ -406,15 +401,15 @@ export class ParallelCoordinatePlot extends Plot {
    * and timeline actions. Shows/hides lines and dots as needed.
    */
   animate() {
-    console.log('PCP:animate:starting animation with data:', this.data);
-    console.log(
+    logger.debug('PCP:animate: starting animation with data:', this.data);
+    logger.debug(
       'PCP:animate: starting animation with timeline actions:',
       this.timelineActions,
     );
 
     const loop = async () => {
-      // stop animation if no data
-      if (!this.data.length) {
+      // stop animation if paused or no data
+      if (!this.playing || !this.data.length) {
         return;
       }
 
@@ -439,7 +434,7 @@ export class ParallelCoordinatePlot extends Plot {
             ),
           ]);
         } catch (error) {
-          console.warn('Error hiding previous elements:', error);
+          logger.warn('PCP: error hiding previous elements:', error);
         }
       }
 
@@ -475,12 +470,12 @@ export class ParallelCoordinatePlot extends Plot {
         // update state for next iteration
         this.currentDataIdx++;
         // prettier-ignore
-        console.debug('PCP:animate: timelineActionIdx:', this.currentTimelineActionIdx, 'currentDataIdx:', this.currentDataIdx);
+        logger.debug('PCP:animate: timelineActionIdx:', this.currentTimelineActionIdx, 'currentDataIdx:', this.currentDataIdx);
 
         // continue animation loop
         this.animationRef = requestAnimationFrame(loop);
       } catch (error) {
-        console.error('PCP:animate: Error:', error);
+        logger.error('PCP:animate: error:', error);
         this.animationRef = requestAnimationFrame(loop);
       }
     };
@@ -576,15 +571,14 @@ export class ParallelCoordinatePlot extends Plot {
       action
         .updateProps({
           templateVariables: data,
-          horizontalAlign: 'middle' as HorizontalAlign,
+          horizontalAlign: 'center' as HorizontalAlign,
           verticalAlign: 'top' as VerticalAlign,
-        } as any)
-
+        })
         .setCanvas(this.svg)
         // .setCoordinate([[0, 0], this.topMidCoordinate()]);
         .setCoordinate([[0, 0], this.coordinateOnAxis(date)]);
 
-      console.log('PCP:showAction: action:', this.topMidCoordinate());
+      logger.debug('PCP:showAction: action:', this.topMidCoordinate());
 
       return Promise.all([
         action.show(),
@@ -616,7 +610,7 @@ export class ParallelCoordinatePlot extends Plot {
   }
 
   private colorOnShow(type: NumericalFeatureName): string {
-    return LineColor[type];
+    return LineColor[type] ?? Colors.Grey;
   }
 
   private colorOnHideLine(type: NumericalFeatureName) {
@@ -624,7 +618,7 @@ export class ParallelCoordinatePlot extends Plot {
       type === NumericalFeatureName.MAX ||
       type === NumericalFeatureName.MIN
     ) {
-      return LineColor[type];
+      return LineColor[type] ?? Colors.Grey;
     } else {
       return Colors.LightGrey1;
     }
@@ -653,7 +647,6 @@ export class ParallelCoordinatePlot extends Plot {
 
   private coordinateOnAxis(date: Date): Coordinate {
     const data = this.data[findIndexByAnyDateField(this.data, date)];
-    console.log('data: ', data);
     const xScale = this.xScaleMap.get(this.selectedAxis);
     const x = xScale(data[this.selectedAxis]);
     const y = this.yScale(this.selectedAxis);

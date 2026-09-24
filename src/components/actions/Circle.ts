@@ -20,7 +20,7 @@ export class Circle extends Action {
     this.type = ActionName.CIRCLE;
   }
 
-  public setProps(properties: CircleProps) {
+  public setProps(properties: Partial<CircleProps>) {
     this.props = { ...defaultCircleProps, ...properties };
     return this;
   }
@@ -42,7 +42,7 @@ export class Circle extends Action {
       .attr('stroke', this.props.color)
       .attr('opacity', this.props.opacity)
       .node();
-    this.node.appendChild(this.circleNode);
+    this.node!.appendChild(this.circleNode);
   }
 
   public setCoordinate(coordinate: [Coordinate, Coordinate]): this {
@@ -56,7 +56,7 @@ export class Circle extends Action {
     return this;
   }
 
-  public updateProps(properties: CircleProps): this {
+  public updateProps(properties: Partial<CircleProps>): this {
     this.props = { ...this.props, ...properties };
     return this;
   }

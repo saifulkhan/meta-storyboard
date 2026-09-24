@@ -5,7 +5,9 @@ import {
   CategoricalFeatureName,
   Coordinate,
   ActionProps,
+  AnyActionProps,
 } from '../../types';
+import { prefersReducedMotion } from '../../common';
 
 export const defaultActionProps: ActionProps = {
   hide: true,
@@ -13,20 +15,18 @@ export const defaultActionProps: ActionProps = {
 };
 
 export abstract class Action {
-  protected type!: ActionName;
+  protected type: ActionName | string = '';
   protected props: ActionProps = defaultActionProps;
   protected svg!: SVGGElement;
-  protected node: any = null;
+  protected node: SVGGElement | null = null;
   protected coordOrigin!: Coordinate;
   protected coordDestination!: Coordinate;
   protected featureType?: NumericalFeatureName | CategoricalFeatureName;
 
-  constructor() {}
+  public abstract setProps(properties: AnyActionProps): this;
+  public abstract updateProps(properties: AnyActionProps): this;
 
-  public abstract setProps(properties: ActionProps): this;
-  public abstract updateProps(properties: ActionProps): this;
-
-  public getType(): ActionName {
+  public getType(): ActionName | string {
     return this.type;
   }
 
@@ -37,8 +37,13 @@ export abstract class Action {
    **/
   public abstract setCoordinate(coordinate: [Coordinate, Coordinate]): this;
 
-  public show(delay = 0, duration = 1000) {
-    return new Promise<number>((resolve, reject) => {
+  public show(delay = 0, duration = 1000): Promise<number> {
+    if (prefersReducedMotion()) {
+      delay = 0;
+      duration = 0;
+    }
+
+    return new Promise<number>((resolve) => {
       d3.select(this.node)
         .transition()
         // delay before transition
@@ -55,12 +60,17 @@ export abstract class Action {
     });
   }
 
-  public hide(delay = 0, duration = 1000) {
+  public hide(delay = 0, duration = 1000): Promise<number> {
     if (!this.props.hide) {
       return Promise.resolve(0);
     }
 
-    return new Promise<number>((resolve, reject) => {
+    if (prefersReducedMotion()) {
+      delay = 0;
+      duration = 0;
+    }
+
+    return new Promise<number>((resolve) => {
       d3.select(this.node)
         .transition()
         .delay(0)
@@ -81,19 +91,22 @@ export abstract class Action {
     duration: number,
   ): Promise<any>;
 
+  /**
+   ** Remove the action's drawing from the canvas.
+   **/
   public remove() {
-    d3.select(this.node).select('svg').remove();
+    d3.select(this.node).remove();
+    this.node = null;
     return this;
   }
 
   public abstract draw(): void;
+
   protected canvas(): void {
     this.node = d3
       .create('svg')
       .append('g')
       .style('opacity', 0)
-      // another way to hide this object
-      // .attr("display", "none")
       .node();
 
     d3.select(this.svg).append(() => this.node);
@@ -110,7 +123,7 @@ export abstract class Action {
     return this.featureType;
   }
 
-  public getProps() {
+  public getProps(): ActionProps {
     return this.props;
   }
 }

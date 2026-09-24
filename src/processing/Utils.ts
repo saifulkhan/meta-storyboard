@@ -1,44 +1,36 @@
-import * as d3 from 'd3';
 import { TimeSeriesPoint, TimeSeriesData } from '../types';
 import { Peak } from '../feature/Peak';
 import { Segment } from '../types';
 import { Search } from './Search';
+import * as common from '../common';
 
 /**
  * Utils class containing static utility methods for time series data processing,
- * segmentation, and ranking functions.
+ * segmentation, and ranking functions. Generic helpers delegate to the
+ * functional API in `common.ts` so there is a single implementation.
  */
 export class Utils {
-  /* Rank used between 0 and MAX_RANK */
+  /* rank used between 0 and MAX_RANK */
   private static readonly MAX_RANK = 10;
 
   /**
    * Calculates the mean of an array of numbers
    */
   public static mean(data: number[]): number {
-    return data.reduce((acc, val) => acc + val, 0) / data.length;
+    return common.mean(data);
   }
 
   /**
-   * Sorts time series data by a specified key and ensures date order
+   * Sorts time series data by a specified key and ensures date order.
+   * If a point has no `y` value and `yKey` is provided, `y` is populated
+   * from that column.
    */
   public static sortTimeseriesData(
     data: TimeSeriesData,
     key: keyof TimeSeriesPoint,
+    yKey?: string,
   ): TimeSeriesData {
-    // sort data by selected key, e.g, "kernel_size"
-    return data
-      .slice()
-      .map((item) => {
-        // Ensure the y property is populated for compatibility with TimeseriesData
-        // Use mean_test_accuracy as the default value for y if it's not already set
-        if (item.y === undefined) {
-          item.y = item.mean_test_accuracy;
-        }
-        return item;
-      })
-      .sort((a, b) => d3.ascending(a[key], b[key]))
-      .sort((a, b) => d3.ascending(a['date'], b['date']));
+    return common.sortTimeseriesData(data, key, yKey);
   }
 
   /**
@@ -49,51 +41,21 @@ export class Utils {
     start: Date,
     end: Date,
   ): TimeSeriesData {
-    return data.filter((item) => item.date >= start && item.date <= end);
-  }
-
-  /**
-   * Creates a predicate function from a string
-   */
-  public static createPredicate(
-    predicateString: string,
-  ): ((obj: any) => boolean) | null {
-    try {
-      // wrapping the predicateString in a function and returning the predicate function
-      const predicateFunction = new Function(
-        'obj',
-        `return ${predicateString};`,
-      ) as (obj: any) => boolean;
-      return predicateFunction;
-    } catch (error) {
-      console.error('Error creating predicate function:', error);
-      return null;
-    }
+    return common.sliceTimeseriesByDate(data, start, end);
   }
 
   /**
    * Finds the index of a date in time series data
    */
   public static findDateIdx(date: Date, data: TimeSeriesData): number {
-    return data.findIndex((d) => d.date.getTime() == date.getTime());
+    return common.findIndexByExactDate(data, date);
   }
 
   /**
-   * Finds the index of a date in time series data (alternative implementation)
+   * Finds the index of a point whose any Date-valued field matches the date
    */
   public static findIndexOfDate(data: TimeSeriesData, date: Date): number {
-    return data.findIndex((d) => {
-      for (const key in d) {
-        if (
-          d.hasOwnProperty(key) &&
-          d[key] instanceof Date &&
-          d[key].getTime() === date.getTime()
-        ) {
-          return true;
-        }
-      }
-      return false;
-    });
+    return common.findIndexByAnyDateField(data, date);
   }
 
   /**
@@ -103,8 +65,7 @@ export class Utils {
     date: Date,
     data: TimeSeriesData,
   ): TimeSeriesPoint | undefined {
-    const idx = Utils.findDateIdx(date, data);
-    return data[idx];
+    return common.getTimeSeriesPointByDate(date, data);
   }
 
   /**
@@ -114,16 +75,7 @@ export class Utils {
     data: TimeSeriesData,
     dates: Date[],
   ): number[] {
-    const indices: number[] = [];
-
-    for (let i = 0; i < data.length; i++) {
-      const currentDate = data[i].date;
-      // check if the current date exists in the array of dates to find
-      if (dates.some((date) => date.getTime() === currentDate.getTime())) {
-        indices.push(i);
-      }
-    }
-    return indices;
+    return common.findIndicesOfDates(data, dates);
   }
 
   /**
@@ -134,15 +86,7 @@ export class Utils {
     key: K,
     value: V,
   ): void {
-    if (map.has(key)) {
-      const existingValue = map.get(key);
-      if (existingValue && Array.isArray(existingValue)) {
-        existingValue.push(value);
-        map.set(key, existingValue);
-      }
-    } else {
-      map.set(key, [value]);
-    }
+    common.setOrUpdateMap(map, key, value);
   }
 
   /**
@@ -151,38 +95,14 @@ export class Utils {
   public static sortObjectKeysInPlace<T extends Record<string, any>>(
     obj: T,
   ): T {
-    let keys = Object.keys(obj);
-    keys.sort();
-    let sortedObj: Record<string, any> = {};
-    keys.forEach((key) => {
-      sortedObj[key] = obj[key];
-    });
-    // Reassign the sorted keys to the original object
-    Object.keys(sortedObj).forEach((key) => {
-      (obj as Record<string, any>)[key] = sortedObj[key];
-    });
-    return obj;
+    return common.sortObjectKeysInPlace(obj);
   }
 
   /**
    * Gets an array of object keys
    */
   public static getObjectKeysArray(obj: any[]): string[] {
-    // function to check if a value is an object
-    const isObject = (value: unknown): boolean => {
-      return (
-        value !== null && typeof value === 'object' && !Array.isArray(value)
-      );
-    };
-
-    // ensure the array is not empty and contains objects
-    if (!Array.isArray(obj) || obj.length === 0 || !isObject(obj[0])) {
-      return [];
-    }
-
-    // extract keys from the first object
-    const keys = Object.keys(obj[0]);
-    return keys;
+    return common.getObjectKeysArray(obj);
   }
 
   /**
@@ -196,28 +116,7 @@ export class Utils {
       array: Iterable<T>,
     ) => number | null | undefined,
   ): number {
-    let max: number | undefined;
-    let maxIndex = -1;
-    let index = -1;
-    if (valueof === undefined) {
-      for (const value of values) {
-        ++index;
-        const numValue = value as unknown as number;
-        if (numValue != null && (max === undefined || max < numValue)) {
-          max = numValue;
-          maxIndex = index;
-        }
-      }
-    } else {
-      for (const item of values) {
-        const value = valueof(item, ++index, values);
-        if (value != null && (max === undefined || max < value)) {
-          max = value;
-          maxIndex = index;
-        }
-      }
-    }
-    return maxIndex;
+    return common.maxIndex(values, valueof);
   }
 
   /**
@@ -231,44 +130,14 @@ export class Utils {
       array: Iterable<T>,
     ) => number | null | undefined,
   ): number {
-    let min: number | undefined;
-    let minIndex = -1;
-    let index = -1;
-    if (valueof === undefined) {
-      for (const value of values) {
-        ++index;
-        const numValue = value as unknown as number;
-        if (numValue != null && (min === undefined || min > numValue)) {
-          min = numValue;
-          minIndex = index;
-        }
-      }
-    } else {
-      for (const item of values) {
-        const value = valueof(item, ++index, values);
-        if (value != null && (min === undefined || min > value)) {
-          min = value;
-          minIndex = index;
-        }
-      }
-    }
-    return minIndex;
+    return common.minIndex(values, valueof);
   }
 
   /**
    * Min-Max normalization of data of the form [x0, x1, ...xn]
    */
-  public static normalise(data: number[]) {
-    // get min and max values from data (for normalization)
-    const [min, max] = data
-      .slice(1)
-      .reduce(
-        (res, d) => [Math.min(d, res[0]), Math.max(d, res[1])],
-        [data[0], data[0]],
-      );
-
-    // normalise y values to be between 0 and 1
-    return data.map((d) => (d - min) / (max - min));
+  public static normalise(data: number[]): number[] {
+    return common.normalise(data);
   }
 
   /**
@@ -281,10 +150,7 @@ export class Utils {
     minOutput: number,
     maxOutput: number,
   ): number {
-    return (
-      ((value - minInput) / (maxInput - minInput)) * (maxOutput - minOutput) +
-      minOutput
-    );
+    return common.scaleValue(value, minInput, maxInput, minOutput, maxOutput);
   }
 
   /**
@@ -342,7 +208,7 @@ export class Utils {
    * Segments by the k most important peaks.
    */
   public static segmentByPeaks(data: TimeSeriesData, k: number): Segment[] {
-    let peaks: Peak[] = Search.searchPeaks(data);
+    const peaks: Peak[] = Search.searchPeaks(data);
     Utils.setPeaksNormHeight(peaks);
 
     // create peaks with just index and height
@@ -366,12 +232,12 @@ export class Utils {
     k: number,
     deltaMax = 0.1,
   ): Segment[] {
-    // Find and rank all peaks in the data
-    let peaks: Peak[] = Search.searchPeaks(data);
+    // find and rank all peaks in the data
+    const peaks: Peak[] = Search.searchPeaks(data);
     Utils.setPeaksNormHeight(peaks);
     const dataLength = data.length;
 
-    // Create a simplified representation of peaks with just index and height
+    // create a simplified representation of peaks with just index and height
     const peakIndices: { idx: number; h: number }[] = peaks.map((d: Peak) => ({
       idx: d.getDataIndex(),
       h: d.getNormHeight(),
@@ -385,11 +251,11 @@ export class Utils {
         | undefined;
 
       peakIndices.forEach((v1, i) => {
-        let closestDist = ordering.reduce(
+        const closestDist = ordering.reduce(
           (closest, v2) => Math.min(closest, Math.abs(v1.idx - v2.idx)),
           Math.min(v1.idx, dataLength - v1.idx),
         );
-        let score = (closestDist / dataLength) * (v1.h / 2);
+        const score = (closestDist / dataLength) * (v1.h / 2);
         bestPeak =
           bestPeak && bestPeak.score > score
             ? bestPeak
@@ -418,10 +284,10 @@ export class Utils {
       return [];
     }
 
-    // Calculate the actual minimum distance in data points
+    // calculate the actual minimum distance in data points
     const minDistance = Math.ceil(deltaMax * data.length);
 
-    // Calculate the prominence of each point (how much it stands out)
+    // calculate the prominence of each point (how much it stands out)
     const prominences: { index: number; value: number }[] = [];
 
     for (let i = 1; i < data.length - 1; i++) {
@@ -429,23 +295,22 @@ export class Utils {
       const prev = data[i - 1].y ?? 0;
       const next = data[i + 1].y ?? 0;
 
-      // A point is a peak if it's higher than its neighbors
+      // a point is a peak if it's higher than its neighbors
       if (current > prev && current > next) {
-        // Calculate prominence (how much the peak stands out)
-        // Simple way: how much higher the peak is compared to its neighbors
+        // prominence: how much higher the peak is compared to its neighbors
         const prominence = Math.min(current - prev, current - next);
         prominences.push({ index: i, value: prominence });
       }
     }
 
-    // Sort peaks by prominence (highest first)
+    // sort peaks by prominence (highest first)
     prominences.sort((a, b) => b.value - a.value);
 
-    // Select peaks with the distance constraint
+    // select peaks with the distance constraint
     const selectedPeaks: number[] = [];
 
     for (const peak of prominences) {
-      // Check if this peak is far enough from already selected peaks
+      // check if this peak is far enough from already selected peaks
       const isFarEnough = selectedPeaks.every(
         (selectedIndex) => Math.abs(peak.index - selectedIndex) >= minDistance,
       );
@@ -453,14 +318,14 @@ export class Utils {
       if (isFarEnough) {
         selectedPeaks.push(peak.index);
 
-        // Break once we have k-1 peaks
+        // break once we have k-1 peaks
         if (selectedPeaks.length === k - 1) {
           break;
         }
       }
     }
 
-    // Sort peaks by their position in the time series and map to objects with idx and date
+    // sort peaks by their position in the time series and map to objects with idx and date
     return selectedPeaks
       .sort((a, b) => a - b)
       .map((idx) => ({ idx, date: data[idx]?.date }));

@@ -7,6 +7,7 @@ import {
   Coordinate,
 } from '../../types';
 import { Colors } from '../Colors';
+import { logger } from '../../logger';
 
 export type MirroredBarChartProps = {
   ticks: number;
@@ -21,6 +22,10 @@ export type MirroredBarChartProps = {
   xLabel: string;
   y1Label: string;
   y2Label: string;
+  /** delay in ms before each bar animation starts */
+  animationDelay: number;
+  /** base duration in ms of each bar animation step */
+  animationBaseDuration: number;
 };
 
 export const defaultProps: MirroredBarChartProps = {
@@ -36,11 +41,13 @@ export const defaultProps: MirroredBarChartProps = {
   xLabel: 'x axis',
   y1Label: 'y1 axis',
   y2Label: 'y2 axis',
+  animationDelay: 1000,
+  animationBaseDuration: 1000,
 };
 
 const ID_AXIS_SELECTION = '#id-axes-selection';
 
-export class MirroredBarChart extends Plot {
+export class MirroredBarChart extends Plot<TimeSeriesData, MirroredBarChartProps> {
   protected props: MirroredBarChartProps = defaultProps;
 
   data: TimeSeriesData = [];
@@ -53,30 +60,25 @@ export class MirroredBarChart extends Plot {
   yScale1: any;
   yScale2: any;
 
-  actions: any = [];
+  actions: TimelineAction[] = [];
   startDataIdx: number = 0; // index of data for animation
   endDataIdx: number = 0;
 
   // animation related
   barElements: any[] = [];
-  isPlayingRef: { current: boolean } = { current: false };
-  currentTimelineActionIdx: number = 0;
-  lastTimelineAction: any = null;
-  animationRef: number = 0;
 
   constructor() {
     super();
   }
 
-  public setPlotProps(props: MirroredBarChartProps): this {
-    const mirroredProps: Partial<MirroredBarChartProps> = { ...props };
-    this.props = { ...this.props, ...mirroredProps };
+  public setPlotProps(props: Partial<MirroredBarChartProps>): this {
+    this.props = { ...this.props, ...props };
     return this;
   }
 
   public setData(data: TimeSeriesData): this {
     this.data = data;
-    console.log('setData: data: ', this.data);
+    logger.debug('MirroredBarChart:setData: data: ', this.data);
     return this;
   }
 
@@ -92,7 +94,7 @@ export class MirroredBarChart extends Plot {
     const bounds = svg.getBoundingClientRect();
     this.height = bounds.height;
     this.width = bounds.width;
-    console.log('setCanvas: bounds: ', bounds);
+    logger.debug('MirroredBarChart:setCanvas: bounds: ', bounds);
 
     this.selector = d3
       .select(this.svg)
@@ -110,7 +112,7 @@ export class MirroredBarChart extends Plot {
   public setActions(actions: TimelineAction[] = []): this {
     this.actions = actions?.sort((a, b) => a[0].getTime() - b[0].getTime());
     this.currentTimelineActionIdx = 0;
-    this.lastTimelineAction = null;
+    this.lastTimelineAction = undefined;
     this.startDataIdx = 0;
     this.endDataIdx = 0;
 
@@ -122,7 +124,7 @@ export class MirroredBarChart extends Plot {
    ** Draw bars and lines (no animation)
    **/
   public plot(): void {
-    console.log('plot: data:', this.data);
+    logger.debug('MirroredBarChart:plot: data:', this.data);
     this._drawAxis();
 
     // Add top bars (commented out for now)
@@ -163,7 +165,7 @@ export class MirroredBarChart extends Plot {
    **/
   _drawAxis() {
     d3.select(this.svg).selectAll('#id-axes-labels').remove(); // TODO
-    console.log('_drawAxis: data = ', this.data);
+    logger.debug('MirroredBarChart:_drawAxis: data = ', this.data);
 
     const middlePoint = this.height / 2;
 
@@ -291,7 +293,7 @@ export class MirroredBarChart extends Plot {
   animate() {
     const loop = async () => {
       if (
-        !this.isPlayingRef.current ||
+        !this.playing ||
         this.currentTimelineActionIdx >= this.actions.length
       ) {
         return;
@@ -307,8 +309,8 @@ export class MirroredBarChart extends Plot {
 
       // get the current action and its date
       const [date, action] = this.actions[this.currentTimelineActionIdx];
-      console.log(
-        'playActionIdx',
+      logger.debug(
+        'MirroredBarChart: playActionIdx',
         this.currentTimelineActionIdx,
         'length',
         this.actions.length,
@@ -319,7 +321,7 @@ export class MirroredBarChart extends Plot {
         (d) => d.date.getTime() === date.getTime(),
       );
       if (dataIdx === -1) {
-        console.error('Could not find data point for date:', date);
+        logger.warn('MirroredBarChart: could not find data point for date:', date);
         this.currentTimelineActionIdx++;
         this.animationRef = requestAnimationFrame(loop);
         return;
@@ -333,7 +335,7 @@ export class MirroredBarChart extends Plot {
       await new Promise((resolve) => setTimeout(resolve, 500));
 
       // update state for next animation
-      this.lastTimelineAction = action;
+      this.lastTimelineAction = this.actions[this.currentTimelineActionIdx];
       this.startDataIdx = dataIdx;
       this.currentTimelineActionIdx++;
       this.animationRef = requestAnimationFrame(loop);
@@ -390,7 +392,7 @@ export class MirroredBarChart extends Plot {
       return barElement;
     });
 
-    console.log('_drawBarsAndHide: Created', this.barElements.length, 'bars');
+    logger.debug('MirroredBarChart:_drawBarsAndHide: created', this.barElements.length, 'bars');
     return this;
   }
 
@@ -402,21 +404,21 @@ export class MirroredBarChart extends Plot {
    */
 
   private _animateBars(start: number, stop: number) {
-    console.log(`_animateBars: animating from ${start} to ${stop}`);
+    logger.debug(`MirroredBarChart:_animateBars: animating from ${start} to ${stop}`);
 
     // calculate how many bars to show
     const barsToShow = this.barElements.slice(start, stop + 1);
 
     if (barsToShow.length === 0) {
-      console.warn('No bars to animate in the specified range');
+      logger.warn('MirroredBarChart: no bars to animate in the specified range');
       return Promise.resolve();
     }
 
     // TODO: the animation time is not in sync with the line plot used in ML story
 
     // animation settings - match with LinePlot timing
-    const delay = 1000; // same as LinePlot delay
-    const baseDuration = 1000; // base duration for animation
+    const delay = this.props.animationDelay;
+    const baseDuration = this.props.animationBaseDuration;
 
     // instead of staggering, animate all bars together with a duration proportional to the number of bars
     // this better matches how the line is drawn in LinePlot
@@ -444,7 +446,7 @@ export class MirroredBarChart extends Plot {
           .delay(delay)
           .duration(duration)
           .on('end', () => {
-            console.log('All bar animations completed');
+            logger.debug('MirroredBarChart: all bar animations completed');
             resolve(delay + duration);
           });
       } else {
@@ -474,15 +476,4 @@ export class MirroredBarChart extends Plot {
     ];
   }
 
-  togglePlayPause() {
-    if (this.isPlayingRef.current) {
-      this.pause();
-    } else {
-      this.play();
-    }
-
-    // The state change in isPlayingRef.current has happened in either pause() or play()
-    // This method is overridden by useControllerWithState to update React state
-    // which ensures the UI reflects the current state immediately
-  }
 }

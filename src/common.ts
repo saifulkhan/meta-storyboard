@@ -5,18 +5,21 @@ export function mean(data: number[]): number {
   return data.reduce((acc, val) => acc + val, 0) / data.length;
 }
 
+/**
+ * Sorts time series data by a selected key (e.g., a hyperparameter), keeping
+ * a stable date order. If a point has no `y` value and `yKey` is provided,
+ * `y` is populated from that column.
+ */
 export function sortTimeseriesData(
   data: TimeSeriesData,
   key: keyof TimeSeriesPoint,
+  yKey?: string,
 ): TimeSeriesData {
-  // sort data by selected key, e.g, "kernel_size"
   return data
     .slice()
-    .map((item) => {
-      // Ensure the y property is populated for compatibility with TimeseriesData
-      // Use mean_test_accuracy as the default value for y if it's not already set
-      if (item.y === undefined) {
-        item.y = item.mean_test_accuracy;
+    .map((item): TimeSeriesPoint => {
+      if (item.y === undefined && yKey !== undefined) {
+        return { ...item, y: item[yKey] };
       }
       return item;
     })
@@ -32,32 +35,12 @@ export function sliceTimeseriesByDate(
   return data.filter((item) => item.date >= start && item.date <= end);
 }
 
-interface FilterCondition {
-  (obj: any): boolean;
-}
-
-export function createPredicate(
-  predicateString: string,
-): FilterCondition | null {
-  try {
-    // wrapping the predicateString in a function and returning the predicate function
-    const predicateFunction = new Function(
-      'obj',
-      `return ${predicateString};`,
-    ) as FilterCondition;
-    return predicateFunction;
-  } catch (error) {
-    console.error('Error creating predicate function:', error);
-    return null;
-  }
-}
-
 /**
  **  Function to find index of a date in the timeseries data
  **/
 
 export function findIndexByExactDate(data: TimeSeriesData, date: Date): number {
-  return data.findIndex((d) => d.date.getTime() == date.getTime());
+  return data.findIndex((d) => d.date.getTime() === date.getTime());
 }
 
 export function findIndexByAnyDateField(
@@ -67,7 +50,7 @@ export function findIndexByAnyDateField(
   return data.findIndex((d) => {
     for (const key in d) {
       if (
-        d.hasOwnProperty(key) &&
+        Object.prototype.hasOwnProperty.call(d, key) &&
         d[key] instanceof Date &&
         d[key].getTime() === date.getTime()
       ) {
@@ -127,13 +110,13 @@ export function setOrUpdateMap<K, V>(
 export function sortObjectKeysInPlace<T extends Record<string, any>>(
   obj: T,
 ): T {
-  let keys = Object.keys(obj);
+  const keys = Object.keys(obj);
   keys.sort();
-  let sortedObj: Record<string, any> = {};
+  const sortedObj: Record<string, any> = {};
   keys.forEach((key) => {
     sortedObj[key] = obj[key];
   });
-  // Reassign the sorted keys to the original object
+  // reassign the sorted keys to the original object
   Object.keys(sortedObj).forEach((key) => {
     (obj as Record<string, any>)[key] = sortedObj[key];
   });
@@ -152,8 +135,7 @@ export function getObjectKeysArray(obj: any[]): string[] {
   }
 
   // extract keys from the first object
-  const keys = Object.keys(obj[0]);
-  return keys;
+  return Object.keys(obj[0]);
 }
 
 export function maxIndex<T>(
@@ -164,28 +146,10 @@ export function maxIndex<T>(
     array: Iterable<T>,
   ) => number | null | undefined,
 ): number {
-  let max: number | undefined;
-  let maxIndex = -1;
-  let index = -1;
-  if (valueof === undefined) {
-    for (const value of values) {
-      ++index;
-      const numValue = value as unknown as number;
-      if (numValue != null && (max === undefined || max < numValue)) {
-        max = numValue;
-        maxIndex = index;
-      }
-    }
-  } else {
-    for (const item of values) {
-      const value = valueof(item, ++index, values);
-      if (value != null && (max === undefined || max < value)) {
-        max = value;
-        maxIndex = index;
-      }
-    }
-  }
-  return maxIndex;
+  // delegate to d3-array; identical -1 semantics when empty
+  return valueof === undefined
+    ? d3.maxIndex(values as Iterable<number>)
+    : d3.maxIndex(values, valueof);
 }
 
 export function minIndex<T>(
@@ -196,34 +160,15 @@ export function minIndex<T>(
     array: Iterable<T>,
   ) => number | null | undefined,
 ): number {
-  let min: number | undefined;
-  let minIndex = -1;
-  let index = -1;
-  if (valueof === undefined) {
-    for (const value of values) {
-      ++index;
-      const numValue = value as unknown as number;
-      if (numValue != null && (min === undefined || min > numValue)) {
-        min = numValue;
-        minIndex = index;
-      }
-    }
-  } else {
-    for (const item of values) {
-      const value = valueof(item, ++index, values);
-      if (value != null && (min === undefined || min > value)) {
-        min = value;
-        minIndex = index;
-      }
-    }
-  }
-  return minIndex;
+  return valueof === undefined
+    ? d3.minIndex(values as Iterable<number>)
+    : d3.minIndex(values, valueof);
 }
 
 /*
  * Min-Max normalization of data of the form [x0, x1, ...xn]
  */
-export function normalise(data: number[]) {
+export function normalise(data: number[]): number[] {
   // get min and max values from data (for normalization)
   const [min, max] = data
     .slice(1)
@@ -231,6 +176,10 @@ export function normalise(data: number[]) {
       (res, d) => [Math.min(d, res[0]), Math.max(d, res[1])],
       [data[0], data[0]],
     );
+
+  if (max === min) {
+    return data.map(() => 0);
+  }
 
   // normalise y values to be between 0 and 1
   return data.map((d) => (d - min) / (max - min));
@@ -254,4 +203,16 @@ export function findTimelineActionByDate(
   date: Date,
 ): TimelineAction | undefined {
   return data.find(([actionDate]) => actionDate.getTime() === date.getTime());
+}
+
+/**
+ * Whether the user has requested reduced motion at the OS/browser level;
+ * animated plots use this to shorten or skip transitions.
+ */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  );
 }

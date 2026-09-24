@@ -5,7 +5,7 @@
 [![Source Code](https://img.shields.io/badge/GitHub-meta--storyboard-181717.svg?style=flat&logo=github)](https://github.com/saifulkhan/meta-storyboard)
 [![Examples](https://img.shields.io/badge/GitHub-meta--storyboard--examples-181717.svg?style=flat&logo=github&logoColor=white)](https://github.com/saifulkhan/meta-storyboard-examples/)
 
-<!-- [![Build Status](https://github.com/saifulkhan/meta-storyboard/actions/workflows/ci.yml/badge.svg)](https://github.com/saifulkhan/meta-storyboard/actions) -->
+[![Build Status](https://github.com/saifulkhan/meta-storyboard/actions/workflows/ci.yml/badge.svg)](https://github.com/saifulkhan/meta-storyboard/actions)
 
 ---
 
@@ -40,7 +40,8 @@ Meta-Storyboard (MSB) is a JavaScript/TypeScript library that enables the creati
 - **Feature Detection**: Built-in peak and event detection utilities.
 - **Action Mapping**: Map features to visual actions (dots, circles, connectors, text boxes, etc.).
 - **Animated Plots**: Animate transitions and storytelling sequences.
-- **Extensible Components**: Easily add new plot or action types.
+- **Extensible Components**: Register custom feature detectors and action types via `FeatureFactory.register()` and `ActionFactory.register()`.
+- **Table Validation**: Validate feature-action tables with `validateFeatureActionTable()` and a shipped JSON Schema.
 - **Example Stories and Playground**: Test and explore components in isolation.
 <!-- - **Interactive Tables**: UI for editing feature-action tables. -->
 
@@ -84,6 +85,8 @@ const timelineActions = new msb.FeatureActionFactory()
 
 // 3. Initialize a plot and animation controller
 const plot = useRef(new msb.LinePlot()).current;
+// react hook shipped with the library (optional entry point)
+import { useControllerWithState } from 'meta-storyboard/react';
 const [controller, isPlaying] = useControllerWithState(msb.PlayPauseController, [plot]);
 
 // 4. Configure plot and animate
@@ -124,6 +127,8 @@ const timelineActions = new msb.FeatureActionFactory()
 
 // 3. Initialize a plot and animation controller
 const plot = useRef(new msb.LinePlot()).current;
+// react hook shipped with the library (optional entry point)
+import { useControllerWithState } from 'meta-storyboard/react';
 const [controller, isPlaying] = useControllerWithState(msb.PlayPauseController, [plot]);
 
 // 4. Configure plot and animate
@@ -139,6 +144,62 @@ onClick={controller.togglePlayPause};
 ```
 
 See more complete [examples](#examples) and their implementation in [GitHub: meta-storyboard-examples](https://github.com/saifulkhan/meta-storyboard-examples).
+
+---
+
+## Validation, Customization & Debugging
+
+### Validate feature-action tables
+
+Tables are usually loaded from JSON; validate them at load time to get all
+problems reported at once, with paths:
+
+```ts
+import { validateFeatureActionTable, assertFeatureActionTable } from 'meta-storyboard';
+
+const { valid, issues } = validateFeatureActionTable(tableJson);
+// or throw with a formatted message:
+assertFeatureActionTable(tableJson);
+```
+
+A JSON Schema is shipped at `doc/feature-action-table.schema.json` for editor
+autocomplete and CI validation.
+
+### Conditions
+
+Row `properties` filter detected features numerically, e.g., `{ "gt": 100 }`.
+Supported keys: `eq`, `le`/`lte`, `ge`/`gte`, `lt`, `gt`, `ne`. For `SLOPE`
+features the slope value is compared; for all other features the height.
+
+### Register custom features and actions
+
+```ts
+import { ActionFactory, FeatureFactory } from 'meta-storyboard';
+
+// a custom action usable as { "action": "MY_MARKER" } in tables
+ActionFactory.register('MY_MARKER', (props) => new MyMarker().setProps(props), /* zOrder */ 5);
+
+// a custom feature detector usable as { "feature": "CHANGEPOINT" } in tables
+FeatureFactory.register('CHANGEPOINT', (data, props, rank) => detectChangepoints(data, rank));
+```
+
+### Debug logging
+
+The library is silent by default (warnings and errors only). Enable debug
+output or route logs into your own logger:
+
+```ts
+import { setDebug, setLogger } from 'meta-storyboard';
+
+setDebug(true); // verbose diagnostics
+setLogger({ warn: myLogger.warn, error: myLogger.error });
+```
+
+### Reduced motion
+
+Animated transitions automatically respect the user's
+`prefers-reduced-motion` setting; animation timing is configurable per plot
+(e.g., `animationDelay`, `animationDurationMsPerPixel` in `LinePlot`).
 
 ---
 

@@ -7,72 +7,82 @@ import external from 'rollup-plugin-peer-deps-external';
 import dts from 'rollup-plugin-dts';
 import { readFileSync } from 'fs';
 
-// Read package.json as JSON
+// read package.json as JSON
 const packageJson = JSON.parse(readFileSync('./package.json', 'utf8'));
 
+const externals = Object.keys(packageJson.peerDependencies || {});
+
+const makePlugins = ({ declaration }) => [
+  external(),
+  resolve(),
+  commonjs(),
+  typescript({
+    tsconfig: './tsconfig.build.json',
+    sourceMap: true,
+    declaration,
+    ...(declaration ? { declarationDir: 'dist' } : { declarationMap: false }),
+    noEmitOnError: false,
+    exclude: ['**/__tests__/**', '**/*.test.ts'],
+  }),
+  babel({
+    babelHelpers: 'runtime',
+    exclude: 'node_modules/**',
+    extensions: ['.js', '.ts'],
+    presets: [
+      [
+        '@babel/preset-env',
+        {
+          modules: false,
+          useBuiltIns: 'usage',
+          corejs: 3,
+        },
+      ],
+      '@babel/preset-typescript',
+    ],
+    plugins: [
+      [
+        '@babel/plugin-transform-runtime',
+        {
+          corejs: 3,
+          helpers: true,
+          regenerator: true,
+        },
+      ],
+    ],
+  }),
+  terser(),
+];
+
 export default [
+  // core library
   {
     input: 'src/index.ts',
     output: [
-      {
-        file: packageJson.main,
-        format: 'cjs',
-        sourcemap: true,
-      },
-      {
-        file: packageJson.module,
-        format: 'esm',
-        sourcemap: true,
-      },
+      { file: packageJson.main, format: 'cjs', sourcemap: true },
+      { file: packageJson.module, format: 'esm', sourcemap: true },
     ],
-    plugins: [
-      external(),
-      resolve(),
-      commonjs(),
-      typescript({
-        tsconfig: './tsconfig.build.json',
-        sourceMap: true,
-        declaration: true,
-        declarationDir: 'dist',
-        // Skip type checking to avoid TypeScript errors during build
-        noEmitOnError: false,
-        exclude: ['**/__tests__/**', '**/*.test.ts'],
-      }),
-      babel({
-        babelHelpers: 'runtime',
-        exclude: 'node_modules/**',
-        extensions: ['.js', '.ts'],
-        presets: [
-          ['@babel/preset-env', {
-            modules: false,
-            useBuiltIns: 'usage',
-            corejs: 3
-          }],
-          '@babel/preset-typescript'
-        ],
-        plugins: [
-          ['@babel/plugin-transform-runtime', {
-            corejs: 3,
-            helpers: true,
-            regenerator: true
-          }]
-        ]
-      }),
-      terser(),
-    ],
-    external: Object.keys(packageJson.peerDependencies || {}),
+    plugins: makePlugins({ declaration: true }),
+    external: externals,
   },
+  // react bindings (optional entry point: meta-storyboard/react)
+  {
+    input: 'src/react/index.ts',
+    output: [
+      { file: 'dist/react/index.js', format: 'cjs', sourcemap: true },
+      { file: 'dist/react/index.esm.js', format: 'esm', sourcemap: true },
+    ],
+    plugins: makePlugins({ declaration: false }),
+    external: externals,
+  },
+  // type declarations
   {
     input: 'src/index.ts',
     output: [{ file: 'dist/index.d.ts', format: 'esm' }],
-    plugins: [
-      dts({
-        respectExternal: true,
-        // Fix paths in the declaration file
-        afterBuild: () => {
-          console.log('Fixing paths in declaration files...');
-        },
-      }),
-    ],
+    plugins: [dts({ respectExternal: true })],
+  },
+  {
+    input: 'src/react/index.ts',
+    output: [{ file: 'dist/react/index.d.ts', format: 'esm' }],
+    plugins: [dts({ respectExternal: true })],
   },
 ];

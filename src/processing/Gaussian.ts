@@ -3,6 +3,7 @@ import { Peak } from '../feature/Peak';
 import { CategoricalFeature } from '../feature/CategoricalFeature';
 import { Utils } from './Utils';
 import { Search } from './Search';
+import { logger } from '../logger';
 
 /**
  * Gaussian class containing static methods for Gaussian curve generation and manipulation
@@ -37,14 +38,14 @@ export class Gaussian {
       ctsGauss,
     );
 
-    console.log('gmm: ntsBoundGauss:', ntsBoundGauss);
-    console.log('gmm: ctsBoundGauss:', ctsBoundGauss);
+    logger.debug('gmm: ntsBoundGauss:', ntsBoundGauss);
+    logger.debug('gmm: ctsBoundGauss:', ctsBoundGauss);
 
     const combined = Gaussian.combineSeries(data, [
       ntsBoundGauss,
       ctsBoundGauss,
     ]);
-    console.log('gmm: combined:', combined);
+    logger.debug('gmm: combined:', combined);
 
     return combined;
   }
@@ -73,14 +74,14 @@ export class Gaussian {
 
     const peaks = Search.searchPeaks(data, 0, metric, window);
     // prettier-ignore
-    console.debug('generateGaussForPeaks: peaks height:', peaks.map((d) => d.getHeight()));
+    logger.debug('generateGaussForPeaks: peaks height:', peaks.map((d) => d.getHeight()));
 
     Utils.setPeaksNormHeight(peaks);
     Utils.rankPeaksByHeight(peaks);
     // prettier-ignore
-    console.debug('generateGaussForPeaks: peaks norm height:', peaks.map((d) => d.getNormHeight()));
+    logger.debug('generateGaussForPeaks: peaks norm height:', peaks.map((d) => d.getNormHeight()));
     // prettier-ignore
-    console.debug('generateGaussForPeaks: peaks rank:', peaks.map((d) => d.getRank()));
+    logger.debug('generateGaussForPeaks: peaks rank:', peaks.map((d) => d.getRank()));
 
     const gaussTSData: TimeSeriesData[] = peaks.map((d: Peak) => {
       const index = Utils.findDateIdx(d.getDate(), data);
@@ -235,7 +236,7 @@ export class Gaussian {
       !inputSeries ||
       !inputSeries.length
     ) {
-      console.error('Invalid inputs to combineSeries');
+      logger.error('Gaussian.combineSeries: invalid inputs');
       return [];
     }
 

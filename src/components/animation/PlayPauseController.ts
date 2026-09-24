@@ -1,38 +1,37 @@
+import { Playable } from '../../types';
+
 /**
  * PlayPauseController provides functionality to control play/pause state
- * for animation objects without depending on any specific framework.
+ * for a single playable object (e.g., a plot) without depending on any
+ * specific framework.
  */
 export class PlayPauseController {
   private isPlaying: boolean = false;
-  private plots: any;
+  private plot: Playable;
 
-  constructor(controlledObject: any) {
-    this.plots = controlledObject;
+  constructor(plot: Playable) {
+    this.plot = plot;
 
-    // Set the onPauseCallback if the plot supports it
-    if (this.plots && typeof this.plots.setOnPauseCallback === 'function') {
-      this.plots.setOnPauseCallback(() => this.pause());
-    }
+    // pause the controller when the plot pauses itself, e.g., at a pause action
+    this.plot.setOnPauseCallback?.(() => this.pause());
   }
 
   togglePlayPause(): void {
-    this.isPlaying = !this.isPlaying;
-
     if (this.isPlaying) {
-      this.plots.play();
+      this.pause();
     } else {
-      this.plots.pause();
+      this.play();
     }
   }
 
   pause(): void {
     this.isPlaying = false;
-    this.plots.pause();
+    this.plot.pause();
   }
 
   play(): void {
     this.isPlaying = true;
-    this.plots.play();
+    this.plot.play();
   }
 
   getIsPlaying(): boolean {

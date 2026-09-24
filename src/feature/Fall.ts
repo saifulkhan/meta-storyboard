@@ -6,8 +6,8 @@ export class Fall extends NumericalFeature {
   protected normGrad: number = 0;
 
   constructor(
-    date: Date,
-    height: number,
+    date?: Date,
+    height?: number,
     rank?: number,
     metric?: string,
     start?: Date,
@@ -15,8 +15,8 @@ export class Fall extends NumericalFeature {
   ) {
     super();
     this.type = NumericalFeatureName.FALL;
-    this.setDate(date);
-    this.setHeight(height);
+    if (date !== undefined) this.setDate(date);
+    if (height !== undefined) this.setHeight(height);
     if (rank !== undefined) this.setRank(rank);
     if (metric !== undefined) this.setMetric(metric);
     if (start !== undefined) this.setStart(start);

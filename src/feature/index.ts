@@ -11,3 +11,4 @@ export * from './NumericalFeature';
 export * from './Peak';
 export * from './Raise';
 export * from './Slope';
+export * from './Valley';

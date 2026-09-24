@@ -4,7 +4,7 @@ import {
   TimelineAction,
   Segment,
   CategoricalFeatureName,
-  NumericalFeatureName,
+  CategoricalEvent,
   FeatureActionTableRow,
   ActionTableRow,
   FeatureActionTableData,
@@ -18,18 +18,30 @@ import {
   CategoricalFeature,
 } from '../feature';
 import { Search, Gaussian, Utils } from '../processing';
-import {} from '../types';
 import { getTimeSeriesPointByDate } from '../common';
 import { FeatureFactory } from './FeatureFactory';
 import { ActionFactory } from './ActionFactory';
+import { logger } from '../logger';
 
+export type SegmentationMethod = 'gmm' | 'peaks';
+
+/**
+ * Turns time series data and feature-action tables into a list of timeline
+ * actions ready to be animated by a plot.
+ *
+ * The fluent setters can be called in any order; all processing happens in
+ * `create()`, which is safe to call repeatedly (state is rebuilt each time).
+ */
 export class FeatureActionFactory {
   private data: TimeSeriesData = [];
-  private categoricalEventsData: any[] = [];
+  private categoricalEventsData: CategoricalEvent[] = [];
   private props: FeatureSearchProps = defaultFeatureSearchProps;
   private numericalFATable: FeatureActionTableData = [];
   private categoricalFATable: FeatureActionTableData = [];
-  private numSegment: number = 3;
+
+  // segmentation request; segmentation itself runs inside create()
+  private numSegment: number = 0;
+  private segmentMethod: SegmentationMethod | undefined = undefined;
 
   private numericalFeatures: NumericalFeature[] = [];
   private categoricalFeatures: CategoricalFeature[] = [];
@@ -37,10 +49,9 @@ export class FeatureActionFactory {
   private actionFactory: ActionFactory = new ActionFactory();
   private featureFactory: FeatureFactory = new FeatureFactory();
   private timelineActions: TimelineAction[] = [];
-  private tempTimelineActions: TimelineAction[] = []; // for categorical features, we need to remove  this
+  // categorical actions are only added to the timeline when a segment selects them
+  private categoricalTimelineActions: TimelineAction[] = [];
   private segments: Segment[] = [];
-
-  constructor() {}
 
   public setProps(props: FeatureSearchProps) {
     this.props = { ...defaultFeatureSearchProps, ...props };
@@ -53,14 +64,11 @@ export class FeatureActionFactory {
   }
 
   public setCategoricalFeatures(
-    categoricalEventsData: any,
+    categoricalEventsData: CategoricalEvent[],
     categoricalFATable: FeatureActionTableData,
   ) {
-    this.categoricalEventsData = categoricalEventsData;
-    this.categoricalFATable = categoricalFATable;
-
-    // prettier-ignore
-    console.debug('FeatureActionFactory: categoricalFeatures: ', this.categoricalFeatures);
+    this.categoricalEventsData = categoricalEventsData || [];
+    this.categoricalFATable = categoricalFATable || [];
     return this;
   }
 
@@ -69,40 +77,36 @@ export class FeatureActionFactory {
     return this;
   }
 
-  public segment(numSegment: number, method: 'gmm' | 'peaks') {
+  /**
+   * Request segmentation of the story into `numSegment` parts. The
+   * segmentation itself is performed during `create()`, after the features
+   * have been detected (the 'gmm' method needs the categorical features).
+   */
+  public segment(numSegment: number, method: SegmentationMethod = 'peaks') {
     this.numSegment = numSegment;
-
-    if (!this.data || this.data.length === 0) {
-      console.error('No data provided');
-      return this;
-    }
-
-    if (method === 'gmm' && !this.categoricalFeatures) {
-      console.error('No categorical features provided');
-      return this;
-    }
-
-    // currently segment by gmm or peaks are only supported
-    if (method === 'gmm') {
-      const combined = Gaussian.gmm(this.data, this.categoricalFeatures);
-      this.segments = Utils.segmentByPeaks(combined, this.numSegment);
-    } else {
-      this.segments = Utils.segmentByPeaks(this.data, this.numSegment);
-    }
-
-    // prettier-ignore
-    console.debug('FeatureActionFactory:segment: segments:', this.segments);
+    this.segmentMethod = method;
     return this;
   }
 
   /**
-   * Create timeline actions
+   * Create timeline actions. Safe to call repeatedly.
    */
-  public create() {
+  public create(): TimelineAction[] {
+    if (!this.data || this.data.length === 0) {
+      throw new Error('FeatureActionFactory: no data provided; call setData() first.');
+    }
+
+    // reset all state built by a previous create() call
+    this.numericalFeatures = [];
+    this.categoricalFeatures = [];
+    this.timelineActions = [];
+    this.categoricalTimelineActions = [];
+    this.segments = [];
+
     this.featureFactory.setProps(this.props).setData(this.data);
     this.actionsForNumericalFeatures();
     this.actionsForCategoricalFeatures();
-    this.actionsForSegments();
+    this.segmentAndSelectActions();
 
     return this.timelineActions;
   }
@@ -114,29 +118,18 @@ export class FeatureActionFactory {
    * 4. Group all actions belonging to the found feature.
    */
   private actionsForNumericalFeatures() {
-    // prettier-ignore
-    console.debug('FeatureActionFactory:actionsForNumericalFeatures: data: ', this.data);
-
-    // 1.
     this.numericalFATable.forEach((row: FeatureActionTableRow) => {
-      // prettier-ignore
-      console.debug('FeatureActionFactory:actionsForNumericalFeatures: row = ', row);
-      // 2.
+      logger.debug('FeatureActionFactory:actionsForNumericalFeatures: row =', row);
+
       const numericalFeatures: NumericalFeature[] =
         this.featureFactory.searchNumericalFeature(
-          row.feature as NumericalFeatureName,
+          row.feature,
           row.properties,
           row.rank,
-        ) || [];
+        );
 
       this.numericalFeatures.push(...numericalFeatures);
 
-      // prettier-ignore
-      console.debug('FeatureActionFactory:actionsForNumericalFeatures: row.feature:', row.feature);
-      // prettier-ignore
-      console.debug('FeatureActionFactory:actionsForNumericalFeatures: numericalFeatures = ', numericalFeatures);
-
-      // 3.
       numericalFeatures.forEach((feature: NumericalFeature) => {
         const date: Date = feature.getDate();
         const point: TimeSeriesPoint | undefined = getTimeSeriesPointByDate(
@@ -145,43 +138,56 @@ export class FeatureActionFactory {
         );
 
         if (!point) {
-          // prettier-ignore
-          console.error('FeatureActionFactory: Point not found!');
+          logger.warn(
+            `FeatureActionFactory: no data point found for feature "${row.feature}" at date ${date}; skipping.`,
+          );
           return;
         }
 
-        // 3.
         const actions: Action[] = this.createActions(
           feature,
           row.actions,
           point,
         );
 
-        // 4.
         const action: Action = this.actionFactory
           .group(actions)
-          ?.setFeatureType(feature?.getType());
+          .setFeatureType(feature.getType());
 
         this.timelineActions.push([date, action]);
-
-        // prettier-ignore
-        console.debug('FeatureActionFactory:actionsForNumericalFeatures: action:', action);
       });
     });
 
-    // 5.
-    // prettier-ignore
-    console.debug('FeatureActionFactory:actionsForNumericalFeatures: timelineActions:', this.timelineActions);
     this.timelineActions.sort((a, b) => b[0].getTime() - a[0].getTime());
   }
 
+  /**
+   * For each categorical event, create a feature and its actions using the
+   * feature-action table row that matches the event's type (falls back to
+   * the first row when no explicit type is given).
+   */
   private actionsForCategoricalFeatures() {
-    // For each categorical event, create a feature and its actions
-    this.categoricalEventsData.forEach((d: any) => {
+    if (this.categoricalEventsData.length === 0) {
+      return;
+    }
+
+    if (this.categoricalFATable.length === 0) {
+      logger.warn(
+        'FeatureActionFactory: categorical events provided without a categorical feature-action table; ignoring events.',
+      );
+      return;
+    }
+
+    this.categoricalEventsData.forEach((d: CategoricalEvent) => {
+      const description = d.description ?? d.event ?? '';
       const feature = new CategoricalFeature()
         .setDate(new Date(d.date))
-        .setRank(d.rank)
-        .setDescription(d.description);
+        .setRank(d.rank ?? 0)
+        .setDescription(description);
+
+      if (d.type) {
+        feature.setType(d.type as CategoricalFeatureName);
+      }
 
       this.categoricalFeatures.push(feature);
 
@@ -192,48 +198,48 @@ export class FeatureActionFactory {
       );
 
       if (!point) {
-        // prettier-ignore
-        console.error('FeatureActionFactory: Point not found for categorical event!', d);
+        logger.warn(
+          `FeatureActionFactory: no data point found for categorical event at date ${date}; skipping.`,
+          d,
+        );
         return;
       }
 
-      // create came actions for this categorical feature
-      const actions: Action[] = this.createActions(
-        feature,
-        this.categoricalFATable[0].actions,
-        point,
-      );
+      // pick the table row matching the event's type, else the first row
+      const row =
+        this.categoricalFATable.find(
+          (r: FeatureActionTableRow) => r.feature === d.type,
+        ) ?? this.categoricalFATable[0];
 
-      // group actions and set feature type
+      const actions: Action[] = this.createActions(feature, row.actions, point);
+
       const action: Action = this.actionFactory
         .group(actions)
-        ?.setFeatureType(feature?.getType());
+        .setFeatureType(feature.getType());
 
-      this.tempTimelineActions.push([date, action]);
-
-      // prettier-ignore
-      // console.debug('FeatureActionFactory:actionsForCategoricalFeatures: action:', action);
+      this.categoricalTimelineActions.push([date, action]);
     });
-
-    // prettier-ignore
-    // console.debug('FeatureActionFactory:actionsForCategoricalFeatures: categoricalFeatures = ', this.categoricalFeatures);
   }
 
   /**
-   * For each segment
-   * Search the feature-action tables
-   * Create action objects and group them
+   * Segment the story (if requested) and mark/select the actions closest to
+   * each segment: matching numerical actions get a pause, and matching
+   * categorical actions are added to the timeline with a pause.
    */
-  private actionsForSegments() {
-    const features: Feature[] = [];
+  private segmentAndSelectActions() {
+    if (!this.numSegment || !this.segmentMethod) {
+      return;
+    }
 
-    // prettier-ignore
-    console.debug('FeatureActionFactory:actionsForSegments: categoricalFeatures:', this.categoricalFeatures);
-    // prettier-ignore
-    console.debug('FeatureActionFactory:actionsForSegments: segments:', this.segments);
+    if (this.segmentMethod === 'gmm') {
+      const combined = Gaussian.gmm(this.data, this.categoricalFeatures);
+      this.segments = Utils.segmentByPeaks(combined, this.numSegment);
+    } else {
+      this.segments = Utils.segmentByPeaks(this.data, this.numSegment);
+    }
 
-    // prettier-ignore
-    console.debug('FeatureActionFactory:actionsForSegments: tempTimelineActions:', this.tempTimelineActions);
+    logger.debug('FeatureActionFactory:segments:', this.segments);
+
     this.segments.forEach((segment: Segment) => {
       const feature = Search.findClosestFeature(
         this.categoricalFeatures,
@@ -242,61 +248,54 @@ export class FeatureActionFactory {
       );
 
       if (!feature) return;
-      // prettier-ignore
-      console.debug('FeatureActionFactory:actionsForSegments: feature:', feature);
 
-      // check if action already exists in timelineActions
-      let index = this.timelineActions.findIndex(
-        (d) => d[0].getTime() === feature.getDate().getTime(),
+      const featureTime = feature.getDate().getTime();
+
+      // pause on the matching numerical action, if any
+      const index = this.timelineActions.findIndex(
+        (d) => d[0].getTime() === featureTime,
       );
-
       if (index >= 0) {
-        // prettier-ignore
-        console.debug('FeatureActionFactory:actionsForSegments: found action in timelineActions');
-        this.timelineActions[index][1].updateProps({ pause: true } as any);
-        // prettier-ignore
-        console.debug('FeatureActionFactory:actionsForSegments: timelineAction:', this.timelineActions[index][1]);
+        this.timelineActions[index][1].updateProps({ pause: true });
       }
 
-      // check if action already exists in tempTimelineActions
-      let index2 = this.tempTimelineActions.findIndex(
-        (d) => d[0].getTime() === feature.getDate().getTime(),
+      // add the matching categorical action to the timeline with a pause
+      const index2 = this.categoricalTimelineActions.findIndex(
+        (d) => d[0].getTime() === featureTime,
       );
-
       if (index2 >= 0) {
-        // prettier-ignore
-        console.debug('FeatureActionFactory:actionsForSegments: found action in tempTimelineActions');
-        this.tempTimelineActions[index2][1].updateProps({ pause: true } as any);
-        this.timelineActions.push(this.tempTimelineActions[index2]);
-        // prettier-ignore
-        console.debug('FeatureActionFactory:actionsForSegments: timelineAction:', this.timelineActions[this.timelineActions.length - 1][1]);
+        this.categoricalTimelineActions[index2][1].updateProps({ pause: true });
+        this.timelineActions.push(this.categoricalTimelineActions[index2]);
       }
-
-      features.push(feature);
     });
 
-    // prettier-ignore
-    console.debug('FeatureActionFactory:actionsForSegments: features:', features);
-    // prettier-ignore
-    console.debug('FeatureActionFactory:actionsForSegments: timelineActions:', this.timelineActions);
+    logger.debug(
+      'FeatureActionFactory:segmentAndSelectActions: timelineActions:',
+      this.timelineActions,
+    );
   }
 
   /**
    * For each feature create action objects and group them
    */
   private createActions(
-    feature: NumericalFeature | CategoricalFeature,
+    feature: Feature,
     actionRows: ActionTableRow[],
     point: TimeSeriesPoint,
-  ) {
-    let actions: Action[] = [];
+  ): Action[] {
+    const templateVariables: Record<string, unknown> = { ...point };
+    if (feature instanceof CategoricalFeature) {
+      templateVariables.description = feature.getDescription();
+    }
+
+    const actions: Action[] = [];
     actionRows.forEach((d: ActionTableRow) => {
       const action = this.actionFactory
-        .create(d.action, { ...d.properties, templateVariables: point } as any)
-        ?.setFeatureType(feature?.getType());
-      if (action) {
-        actions.push(action);
-      }
+        .create(d.action, { ...d.properties, templateVariables })
+        .setFeatureType(
+          (feature as NumericalFeature | CategoricalFeature).getType(),
+        );
+      actions.push(action);
     });
 
     return actions;

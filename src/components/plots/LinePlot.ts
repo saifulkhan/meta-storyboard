@@ -8,8 +8,12 @@ import {
   VerticalAlign,
   TimelineAction,
 } from '../../types';
-import { findIndexByExactDate, findIndexByAnyDateField } from '../../common';
-import { Action } from '../actions';
+import {
+  findIndexByExactDate,
+  findIndexByAnyDateField,
+  prefersReducedMotion,
+} from '../../common';
+import { logger } from '../../logger';
 
 const ID_AXIS_SELECTION = '#id-axes-selection';
 
@@ -44,6 +48,10 @@ export type LinePlotProps = {
   axisFontFamily: string;
   axisFontSize: string;
   yAxisLabelOffset: number;
+  /** delay in ms before each line segment animation starts */
+  animationDelay: number;
+  /** line-draw animation speed in ms per pixel of path length */
+  animationDurationMsPerPixel: number;
 };
 
 export const defaultLinePlotProps: LinePlotProps = {
@@ -59,9 +67,11 @@ export const defaultLinePlotProps: LinePlotProps = {
   axisFontFamily: 'Arial Narrow',
   axisFontSize: '12px',
   yAxisLabelOffset: 12,
+  animationDelay: 1000,
+  animationDurationMsPerPixel: 4,
 };
 
-export class LinePlot extends Plot {
+export class LinePlot extends Plot<TimeSeriesData[], LinePlotProps> {
   data: TimeSeriesData[] = [];
   name = '';
   lineProps: LineProps[] = [];
@@ -71,15 +81,14 @@ export class LinePlot extends Plot {
   selector: any;
   width: number = 0;
   height: number = 0;
-  margin: any = {};
+  margin: { top: number; right: number; bottom: number; left: number } =
+    defaultLinePlotProps.margin;
   xAxis: any;
   leftAxis: any;
   rightAxis: any;
 
   // animation related
   timelineActions: TimelineAction[] = [];
-  lastTimelineAction: TimelineAction | undefined = undefined;
-  currentTimelineActionIdx: number = 0;
   startDataIdx: number = 0;
   endDataIdx: number = 0;
 
@@ -87,28 +96,25 @@ export class LinePlot extends Plot {
     super();
   }
 
-  public setPlotProps(props: LinePlotProps) {
+  public setPlotProps(props: Partial<LinePlotProps>) {
     this.plotProps = { ...defaultLinePlotProps, ...props };
     return this;
   }
 
-  public setLineProps(propsList: LineProps[] = []) {
+  public setLineProps(propsList: Partial<LineProps>[] = []) {
     if (!this.data) {
-      throw new Error('LinePlot: Can not set line properties before data!');
+      throw new Error('LinePlot: cannot set line properties before data!');
     }
 
     const numTimeSeries = this.data.length;
     for (let i = 0; i < numTimeSeries; i++) {
       this.lineProps.push({
-        stroke: propsList[i]?.stroke || defaultLineProps.stroke,
-        strokeWidth: propsList[i]?.strokeWidth || defaultLineProps.strokeWidth,
-        showPoints: propsList[i]?.showPoints || defaultLineProps.showPoints,
-        onRightAxis: propsList[i]?.onRightAxis || defaultLineProps.onRightAxis,
-        dotSize: propsList[i]?.dotSize || defaultLineProps.dotSize,
+        ...defaultLineProps,
+        ...propsList[i],
       });
     }
 
-    console.log('LinePlot: lineProps = ', this.lineProps);
+    logger.debug('LinePlot: lineProps = ', this.lineProps);
 
     return this;
   }
@@ -134,7 +140,7 @@ export class LinePlot extends Plot {
     this.width = bounds.width;
     this.margin = this.plotProps.margin;
 
-    console.log('LinePlot:setCanvas: bounds: ', bounds);
+    logger.debug('LinePlot:setCanvas: bounds: ', bounds);
 
     this.selector = d3
       .select(this.svg)
@@ -150,20 +156,12 @@ export class LinePlot extends Plot {
    ** Draw all lines (no animation)
    **/
   public plot() {
-    console.log('LinePlot:_draw: _data: ', this.data);
+    logger.debug('LinePlot:plot: data: ', this.data);
     const line = (xAxis: any, yAxis: any) => {
       return d3
         .line<TimeSeriesPoint>()
-        .x((d: TimeSeriesPoint) => {
-          return xAxis(d.date);
-        })
-        .y((d: TimeSeriesPoint) => {
-          // if (typeof d.y !== "number" || Number.isNaN(d.y)) {
-          //   console.log(d);
-          //   d.y = 0;
-          // }
-          return yAxis(d.y);
-        });
+        .x((d: TimeSeriesPoint) => xAxis(d.date))
+        .y((d: TimeSeriesPoint) => yAxis(d.y));
     };
 
     // draw line and dots
@@ -171,7 +169,6 @@ export class LinePlot extends Plot {
       const p = this.lineProps[i];
       const yAxis = this.leftOrRightAxis(i);
 
-      console.log('LinePlot:_draw: data:', dataX);
       // draw line
       this.selector
         .append('path')
@@ -185,11 +182,11 @@ export class LinePlot extends Plot {
         this.selector
           .append('g')
           .selectAll('circle')
-          .data(dataX.map(Object.values))
+          .data(dataX)
           .join('circle')
-          .attr('r', this.lineProps[i].dotSize ?? 2)
-          .attr('cx', (d: any) => this.xAxis(d[0]))
-          .attr('cy', (d: any) => yAxis(d[1]))
+          .attr('r', p.dotSize ?? 2)
+          .attr('cx', (d: TimeSeriesPoint) => this.xAxis(d.date))
+          .attr('cy', (d: TimeSeriesPoint) => yAxis(d.y))
           .style('fill', p.stroke)
           .attr('opacity', 0.5);
       }
@@ -202,9 +199,9 @@ export class LinePlot extends Plot {
    ** Set the list of actions to be animated
    **/
   public setActions(timelineActions: TimelineAction[] = []) {
-    this.timelineActions = timelineActions.sort((a, b) => {
-      return a[0].getTime() - b[0].getTime();
-    });
+    this.timelineActions = timelineActions.sort(
+      (a, b) => a[0].getTime() - b[0].getTime(),
+    );
 
     this.lastTimelineAction = undefined;
     this.currentTimelineActionIdx = 0;
@@ -216,21 +213,21 @@ export class LinePlot extends Plot {
   animate() {
     const loop = async () => {
       if (
-        !this.isPlayingRef.current ||
+        !this.playing ||
         this.currentTimelineActionIdx >= this.timelineActions.length
       ) {
         return;
       }
 
       if (this.lastTimelineAction) {
-        const durationHide = await this.lastTimelineAction[1].hide();
+        await this.lastTimelineAction[1].hide();
       }
 
-      const lineNum = 0; // TODO: we can animate first line at the moment
+      const lineNum = 0; // TODO: only the first line is animated at the moment
       const timelineAction: TimelineAction =
         this.timelineActions[this.currentTimelineActionIdx];
 
-      const action: Action = timelineAction[1];
+      const action = timelineAction[1];
       const date: Date = timelineAction[0];
       const dataX = this.data[lineNum];
       const dataIdx = findIndexByAnyDateField(dataX, date);
@@ -244,23 +241,19 @@ export class LinePlot extends Plot {
           },
           horizontalAlign: this.getHorizontalAlign(date),
           verticalAlign: 'top' as VerticalAlign,
-        } as any)
+        })
         .setCanvas(this.svg)
         .setCoordinate(this.getCoordinates(date, lineNum));
 
-      const durationAnimateLine = await this._animateLine(
-        this.startDataIdx,
-        dataIdx,
-        lineNum,
-      );
-      const durationShow = await action.show();
+      await this._animateLine(this.startDataIdx, dataIdx, lineNum);
+      await action.show();
 
       this.lastTimelineAction = timelineAction;
       this.startDataIdx = dataIdx;
       this.currentTimelineActionIdx++;
 
       if (this.lastTimelineAction[1].getProps().pause) {
-        console.log('LinePlot: paused at ', this.lastTimelineAction[0]);
+        logger.debug('LinePlot: paused at ', this.lastTimelineAction[0]);
         // always pause the animation first
         this.pause();
         // then notify the controller to update UI state if callback exists
@@ -286,10 +279,6 @@ export class LinePlot extends Plot {
     stop: number,
     lineNum: number = 0,
   ): Promise<number> {
-    // prettier-ignore
-    // console.log(`LinePlot: lineIndex = ${lineIndex}, start = ${start}, stop = ${stop}`)
-    // console.log(this._data, this._data[lineIndex]);
-
     const dataX = this.data[lineNum].slice(start, stop + 1);
     const p = this.lineProps[lineNum];
     const yAxis = this.leftOrRightAxis(lineNum);
@@ -310,18 +299,20 @@ export class LinePlot extends Plot {
       .attr('d', line(this.xAxis, yAxis)(dataX));
 
     const length = path.node().getTotalLength();
-    const duration = length * 4 || 1000;
+    const reducedMotion = prefersReducedMotion();
+    const duration = reducedMotion
+      ? 0
+      : length * this.plotProps.animationDurationMsPerPixel || 1000;
+    const delay = reducedMotion ? 0 : this.plotProps.animationDelay;
 
-    // Hide the path initially
+    // hide the path initially
     path
       .attr('stroke-dasharray', `${length} ${length}`)
       .attr('stroke-dashoffset', length);
 
-    const delay = 1000;
-
-    // Animate current path with duration given by user
-    return new Promise<number>((resolve, reject) => {
-      const transition = path
+    // animate current path with the configured delay and duration
+    return new Promise<number>((resolve) => {
+      path
         .transition()
         .ease(d3.easeLinear)
         .delay(delay)
@@ -351,9 +342,6 @@ export class LinePlot extends Plot {
       }
     });
 
-    console.log('LinePlot: dataOnLeft = ', dataOnLeft);
-    console.log('LinePlot: dataOnRight = ', dataOnRight);
-
     this.xAxis = this.xScale(
       dataOnLeft.concat(dataOnRight),
       this.width,
@@ -377,7 +365,6 @@ export class LinePlot extends Plot {
       .attr('y', this.height - 5)
       .style('font-size', this.plotProps.axisFontSize ?? '12px')
       .style('font-family', this.plotProps.axisFontFamily ?? 'Arial Narrow')
-
       .text(`${this.plotProps.xLabel}→`);
 
     // draw left axis and label
@@ -385,13 +372,7 @@ export class LinePlot extends Plot {
       this.selector
         .append('g')
         .attr('transform', `translate(${this.margin.left}, 0)`)
-        .call(
-          d3.axisLeft(this.leftAxis),
-          // .tickFormat((d) => {
-          //   let prefix = d3.formatPrefix(".00", d);
-          //   return prefix(d);
-          // })
-        );
+        .call(d3.axisLeft(this.leftAxis));
 
       this.selector
         .append('text')
@@ -410,13 +391,7 @@ export class LinePlot extends Plot {
       this.selector
         .append('g')
         .attr('transform', `translate(${this.width - this.margin.right},0)`)
-        .call(
-          d3.axisRight(this.rightAxis),
-          // .tickFormat((d) => {
-          //   let prefix = d3.formatPrefix(".0", d);
-          //   return prefix(d);
-          // })
-        );
+        .call(d3.axisRight(this.rightAxis));
 
       this.selector
         .append('text')
@@ -449,8 +424,12 @@ export class LinePlot extends Plot {
   /**
    ** Create x and y scales
    **/
-  private xScale(data: TimeSeriesData, w: number, m: any) {
-    const xScale = d3
+  private xScale(
+    data: TimeSeriesData,
+    w: number,
+    m: { left: number; right: number },
+  ) {
+    return d3
       .scaleTime()
       .domain(
         (d3.extent(data, (d: TimeSeriesPoint) => d.date) as [Date, Date]) || [
@@ -460,16 +439,18 @@ export class LinePlot extends Plot {
       )
       .nice()
       .range([m.left, w - m.right]);
-    return xScale;
   }
 
-  private yScale(data: TimeSeriesData, h: number, m: any) {
-    const yScale = d3
+  private yScale(
+    data: TimeSeriesData,
+    h: number,
+    m: { top: number; bottom: number },
+  ) {
+    return d3
       .scaleLinear()
       .domain([0, d3.max(data, (d: TimeSeriesPoint) => d.y) || 0])
       .nice()
       .range([h - m.bottom, m.top]);
-    return yScale;
   }
 
   /*
@@ -499,18 +480,6 @@ export class LinePlot extends Plot {
     const x = this.xAxis(date);
     const xMid = (this.xAxis.range()[0] + this.xAxis.range()[1]) / 2;
     return x >= xMid ? 'left' : 'right';
-  }
-
-  togglePlayPause() {
-    if (this.isPlayingRef.current) {
-      this.pause();
-    } else {
-      this.play();
-    }
-
-    // The state change in isPlayingRef.current has happened in either pause() or play()
-    // This method is overridden by useControllerWithState to update React state
-    // which ensures the UI reflects the current state immediately
   }
 
   /**

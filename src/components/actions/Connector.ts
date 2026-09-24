@@ -18,7 +18,7 @@ export class Connector extends Action {
     this.type = ActionName.CONNECTOR;
   }
 
-  public setProps(properties: ConnectorProps) {
+  public setProps(properties: Partial<ConnectorProps>) {
     this.props = { ...defaultConnectorProperties, ...properties };
     return this;
   }
@@ -38,7 +38,7 @@ export class Connector extends Action {
       .attr('opacity', this.props.opacity)
       .style('stroke-dasharray', '5,5')
       .node();
-    this.node.appendChild(this.connectorNode);
+    this.node!.appendChild(this.connectorNode);
 
     return this;
   }
@@ -56,7 +56,7 @@ export class Connector extends Action {
     return this;
   }
 
-  public updateProps(properties: ConnectorProps): this {
+  public updateProps(properties: Partial<ConnectorProps>): this {
     this.props = { ...this.props, ...properties };
     return this;
   }

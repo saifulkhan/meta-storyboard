@@ -12,5 +12,4 @@ export type TextBoxProps = ActionProps & {
   padding: number;
   fontFamily: string;
   fontSize: string;
-  templateVariables: any;
 };

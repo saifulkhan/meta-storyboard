@@ -30,7 +30,7 @@ export enum Colors {
   Red = '#E84A5F',
 }
 
-export const LineColor = {} as any;
+export const LineColor: Partial<Record<NumericalFeatureName, string>> = {};
 LineColor[NumericalFeatureName.CURRENT] = Colors.Orange;
 LineColor[NumericalFeatureName.LAST] = Colors.PaleCyan;
 LineColor[NumericalFeatureName.MAX] = Colors.Green;
@@ -38,7 +38,7 @@ LineColor[NumericalFeatureName.MIN] = Colors.Purple;
 LineColor[NumericalFeatureName.PEAK] = Colors.LightGreen;
 LineColor[NumericalFeatureName.VALLEY] = Colors.PalePurple;
 
-export const DotColor = {} as any;
+export const DotColor: Partial<Record<NumericalFeatureName, string>> = {};
 DotColor[NumericalFeatureName.CURRENT] = Colors.Orange;
 DotColor[NumericalFeatureName.LAST] = Colors.PaleCyan;
 DotColor[NumericalFeatureName.MAX] = Colors.Green;
@@ -46,7 +46,7 @@ DotColor[NumericalFeatureName.MIN] = Colors.Purple;
 DotColor[NumericalFeatureName.PEAK] = Colors.LightGreen;
 DotColor[NumericalFeatureName.VALLEY] = Colors.PalePurple;
 
-export const TextColor = {} as any;
+export const TextColor: Partial<Record<NumericalFeatureName, string>> = {};
 TextColor[NumericalFeatureName.CURRENT] = Colors.DarkOrange;
 TextColor[NumericalFeatureName.LAST] = Colors.DarkCyan;
 TextColor[NumericalFeatureName.MAX] = Colors.DarkGreen;

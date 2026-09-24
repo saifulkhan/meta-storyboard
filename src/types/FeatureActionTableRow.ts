@@ -7,13 +7,23 @@ import { ConnectorProps } from './ConnectorProps';
 import { TextBoxProps } from './TextBoxProps';
 import { ActionName } from './ActionName';
 
+/**
+ * Loose union of all action properties; table rows typically provide only a
+ * subset of the fields and the rest are filled with per-action defaults.
+ */
+export type AnyActionProps = Partial<
+  CircleProps & ConnectorProps & DotProps & TextBoxProps
+>;
+
 export type ActionTableRow = {
-  action: ActionName;
-  properties: CircleProps | ConnectorProps | DotProps | TextBoxProps;
+  /** built-in action name or a custom name registered via ActionFactory.register() */
+  action: ActionName | string;
+  properties: AnyActionProps;
 };
 
 export type FeatureActionTableRow = {
-  feature: NumericalFeatureName | CategoricalFeatureName;
+  /** built-in feature name or a custom name registered via FeatureFactory.register() */
+  feature: NumericalFeatureName | CategoricalFeatureName | string;
   properties: Condition;
   rank: number;
   actions: ActionTableRow[];

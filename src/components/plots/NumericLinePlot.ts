@@ -86,7 +86,7 @@ export const defaultNumericLinePlotProps: NumericLinePlotProps = {
   stepDelayMs: 500,
 };
 
-export class NumericLinePlot extends Plot {
+export class NumericLinePlot extends Plot<TimeSeriesData, NumericLinePlotProps> {
   data: TimeSeriesData = [];
   name = ''; // numeric x field, e.g., the selected hyperparameter
   plotProps: NumericLinePlotProps = defaultNumericLinePlotProps;
@@ -260,7 +260,7 @@ export class NumericLinePlot extends Plot {
     }
 
     const loop = () => {
-      if (!this.isPlayingRef.current || !this.data.length) {
+      if (!this.playing || !this.data.length) {
         return;
       }
 
@@ -296,23 +296,15 @@ export class NumericLinePlot extends Plot {
     if (this.currentIdx >= this.data.length - 1) {
       this.stepTo(-1);
     }
-    this.isPlayingRef.current = true;
+    this.playing = true;
     this.animate();
   }
 
   pause() {
-    this.isPlayingRef.current = false;
+    this.playing = false;
     if (this.stepTimer) {
       clearTimeout(this.stepTimer);
       this.stepTimer = null;
-    }
-  }
-
-  togglePlayPause() {
-    if (this.isPlayingRef.current) {
-      this.pause();
-    } else {
-      this.play();
     }
   }
 
@@ -346,7 +338,7 @@ export class NumericLinePlot extends Plot {
           name: this.name,
           value: point.y,
         },
-      } as any)
+      })
       .setCanvas(this.actionsSelection.node())
       .setCoordinate(this._coordinatesAt(idx));
 

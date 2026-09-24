@@ -1,3 +1,3 @@
-import { Action } from 'src/components/actions/Action';
+import { Action } from '../components/actions/Action';
 
 export type TimelineAction = [Date, Action];

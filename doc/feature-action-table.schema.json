@@ -1,0 +1,57 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/saifulkhan/meta-storyboard/doc/feature-action-table.schema.json",
+  "title": "Feature-Action Table",
+  "description": "A meta-storyboard feature-action table: each row maps a detected feature to one or more visual actions.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "required": ["feature", "actions"],
+    "additionalProperties": false,
+    "properties": {
+      "feature": {
+        "type": "string",
+        "description": "Feature name: FIRST, CURRENT, LAST, PEAK, VALLEY, MAX, MIN, SLOPE, FALL, RAISE, EVENT, SEGMENTED_EVENT, or a custom name registered via FeatureFactory.register()."
+      },
+      "properties": {
+        "type": "object",
+        "description": "Numeric conditions filtering the detected features.",
+        "additionalProperties": false,
+        "properties": {
+          "eq": { "type": "number" },
+          "le": { "type": "number" },
+          "ge": { "type": "number" },
+          "lte": { "type": "number" },
+          "gte": { "type": "number" },
+          "lt": { "type": "number" },
+          "gt": { "type": "number" },
+          "ne": { "type": "number" }
+        }
+      },
+      "rank": {
+        "type": "number",
+        "description": "Importance rank of the feature (0-10)."
+      },
+      "comment": { "type": "string" },
+      "actions": {
+        "type": "array",
+        "minItems": 1,
+        "items": {
+          "type": "object",
+          "required": ["action"],
+          "additionalProperties": false,
+          "properties": {
+            "action": {
+              "type": "string",
+              "description": "Action name: DOT, CIRCLE, TEXT_BOX, CONNECTOR, or a custom name registered via ActionFactory.register()."
+            },
+            "properties": {
+              "type": "object",
+              "description": "Action properties; unset fields fall back to per-action defaults. TEXT_BOX title/message support ${variable} templates."
+            }
+          }
+        }
+      }
+    }
+  }
+}

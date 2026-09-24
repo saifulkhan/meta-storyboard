@@ -1,3 +1,4 @@
+export * from './ActionName';
 export * from './Align';
 export * from './Coordinate';
 export * from './NumericalFeatureName';
@@ -13,3 +14,5 @@ export * from './CircleProps';
 export * from './ConnectorProps';
 export * from './TextBoxProps';
 export * from './AnimationType';
+export * from './CategoricalEvent';
+export * from './Playable';

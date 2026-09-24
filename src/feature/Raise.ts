@@ -25,7 +25,7 @@ export class Rise extends NumericalFeature {
     return this;
   }
 
-  getNormGrad(normGrad: number) {
+  getNormGrad() {
     return this.normGrad;
   }
 }
