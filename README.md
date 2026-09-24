@@ -43,6 +43,7 @@ Meta-Storyboard (MSB) is a JavaScript/TypeScript library that enables the creati
 - **Extensible Components**: Register custom feature detectors and action types via `FeatureFactory.register()` and `ActionFactory.register()`.
 - **Table Validation**: Validate feature-action tables with `validateFeatureActionTable()` and a shipped JSON Schema.
 - **Example Stories and Playground**: Test and explore components in isolation.
+
 <!-- - **Interactive Tables**: UI for editing feature-action tables. -->
 
 ## Installation
@@ -60,11 +61,8 @@ Story development is a four-step process:
 
    - **Load timeseries data**: See some example COVID-19 and Machine Learning training provenance data in GitHub repository `src/assets/data`.
    - **Load feature-action table**: See some example feature-action tables in GitHub repository `src/assets/feature-action-table`.
-
 2. **Create timeline actions**: Use the `FeatureActionFactory` class to create timeline actions from the timeseries data and feature-action table.
-
 3. **Initialize plot and animation controller**: Create a plot and animation controller. We developed some plots, such as `LinePlot`, `MirroredBarChart`, and `ParallelCoordinatePlot`, available in the `src/components/plots`, and animation controllers in `src/animation`.
-
 4. **Configure plot and animate**: Use play and pause button to animate.
 
 For example (using React but you can use any other framework):
@@ -226,7 +224,7 @@ yarn install
 yarn dev
 ```
 
-Open <http://localhost:3000> in your browser and access the following examples stories.
+Open [http://localhost:3000](http://localhost:3000) in your browser and access the following examples stories.
 
 - [COVID-19 Case Story](http://localhost:3000/example/story-covid19)
 - [COVID-19 Case Story (Gaussian)](http://localhost:3000/example/story-covid19-gaussian)
